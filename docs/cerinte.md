@@ -95,3 +95,41 @@ Este testul de acceptanță al întregului proiect. Fiecare pas spune ce face op
 | 7 | verifică sistemul după realegere | `ls`, apoi `get raport.pdf ./out/` | metadatele sunt reconstruite; fișierul rămâne accesibil | 6 |
 
 Notă: PID-ul unui proces se găsește cu `jps` (include JDK-ul) sau din Task Manager.
+
+## 7. Schița protocolului
+
+Transportul este TCP, care transmite un flux de octeți. Fiecare mesaj are un **antet** (o linie de text sau JSON), iar conținutul fișierului urmează ca exact `dimensiune` octeți. Formatul exact și implementarea vin în Etapa 2. Mesajele de descoperire, heartbeat și alegere a liderului apar în etapele 2, 3 și 5.
+
+### Încărcare și descărcare
+
+| Mesaj | De la → către | Conținut | Răspuns |
+|---|---|---|---|
+| `ALLOCATE` | client → coordonator | nume, dimensiune | `NODES` cu ID-ul fișierului și 2 noduri, sau `ERROR` |
+| `PUT` | client → nod | ID, nume, dimensiune, checksum, nodul pentru copie + octeții fișierului | `STORED` sau `ERROR` |
+| `REPLICATE` | nod → nod | ca `PUT`, fără nodul următor + octeții fișierului | `STORED` sau `ERROR` |
+| `COMMIT` | nod → coordonator | ID fișier, nodurile care îl dețin | `OK` |
+| `LOCATE` | client → coordonator | nume sau ID | `LOCATIONS` cu metadatele, sau `NOT_FOUND` |
+| `GET` | client → nod | ID fișier | antet cu dimensiunea + octeții, sau `NOT_FOUND` |
+
+### Listare, ștergere și starea sistemului
+
+| Mesaj | De la → către | Conținut | Răspuns |
+|---|---|---|---|
+| `LIST` | client → coordonator | (fără conținut) | `FILES` cu lista (nume, ID, dimensiune, noduri), sau `ERROR` |
+| `DELETE_META` | client → coordonator | nume sau ID | `LOCATIONS` cu nodurile care dețin copii (fișierul este marcat ca șters), sau `NOT_FOUND` |
+| `DELETE` | client → nod | ID fișier | `DELETED` sau `NOT_FOUND` |
+| `DELETE_DONE` | client → coordonator | ID fișier, nodurile care au confirmat | `OK` (intrarea se elimină din metadate) |
+| `NODES_STATUS` | client → coordonator | (fără conținut) | `NODES` cu lista (ID, adresă, port, stare, ultimul semn de viață) și coordonatorul |
+
+### Exemplu de schimb pentru `put`
+
+```
+client → coordonator:  ALLOCATE raport.pdf 482133
+coordonator → client:  NODES 3f2a9c1e-... n2 n3
+client → n2:           PUT 3f2a9c1e-... raport.pdf 482133 9f86d081... n3   + 482133 octeți
+n2 → n3:               REPLICATE 3f2a9c1e-... raport.pdf 482133 9f86d081...   + 482133 octeți
+n3 → n2:               STORED
+n2 → coordonator:      COMMIT 3f2a9c1e-... n2 n3
+coordonator → n2:      OK
+n2 → client:           STORED
+```
