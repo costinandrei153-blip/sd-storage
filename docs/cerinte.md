@@ -20,3 +20,32 @@ Fiecare operație este descrisă prin comandă, pașii prin sistem, rezultat și
 - **Dimensiune maximă**: 100 MB per fișier, ca să se potrivească cu testul de scalabilitate.
 - **Numărul de copii**: exact 2, pe noduri distincte.
 - **Checksum**: SHA-256, calculat de client și verificat de fiecare nod.
+
+## 3. Modelul de date
+
+Coordonatorul ține două tabele în memorie: metadatele fișierelor și lista nodurilor.
+
+### Metadatele unui fișier
+
+| Câmp | Tip Java | Exemplu | Stabilit de |
+|---|---|---|---|
+| identificator | `UUID` | `3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90` | coordonator, la încărcare |
+| nume | `String` | `raport.pdf` | utilizator |
+| dimensiune | `long` (octeți) | `482133` | client |
+| checksum | `String` (SHA-256, hex) | `9f86d081...` | client, verificat de fiecare nod |
+| locațiile copiilor | `List<String>` (ID-uri de nod) | `[n2, n3]` | coordonator, după confirmări |
+
+### Un nod din listă
+
+| Câmp | Tip Java | Exemplu |
+|---|---|---|
+| ID nod | `String` | `n2` |
+| adresă și port | `String`, `int` | `192.168.37.102`, `7002` |
+| stare | `enum` | `ACTIV`, `SUSPECT`, `CAZUT` (folosit din Etapa 3) |
+| ultimul semn de viață | `long` (ms) | `System.currentTimeMillis()` la ultimul heartbeat |
+
+### Observații
+
+- Checksum-ul se calculează cu `MessageDigest.getInstance("SHA-256")` din JDK și dovedește că fișierul descărcat este identic cu cel încărcat, indiferent de nodul care l-a servit.
+- Fiecare nod poate raporta ce fișiere deține (ID, nume, dimensiune, checksum). Dacă coordonatorul cade, noul coordonator reconstruiește tabela de metadate din aceste rapoarte (Etapa 6).
+- Starea unui nod și regula de alegere a nodurilor pentru o copie nouă sunt prevăzute de acum, ca etapele 3 și 4 să nu ceară rescrierea codului.
