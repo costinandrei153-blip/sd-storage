@@ -74,4 +74,8 @@ Valorile sunt țintele echipei și se măsoară în etapa indicată.
 
 Obiectivele de mai sus sunt valabile în interiorul acestor ipoteze:
 
-- rețea locală (toate nodurile pe aceeași
+- rețea locală (toate nodurile pe aceeași mașină sau în același LAN), latență mică;
+- cel mult un nod căzut la un moment dat;
+- defecte de tip crash (nodul se oprește), nu bizantine (nodul nu trimite date greșite intenționat);
+- ceasurile nodurilor sunt suficient de apropiate pentru compararea logurilor;
+- discul fiecărui nod are spațiu suficient pentru fișierele stocate.
