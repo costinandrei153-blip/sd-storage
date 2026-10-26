@@ -49,3 +49,29 @@ Coordonatorul ține două tabele în memorie: metadatele fișierelor și lista n
 - Checksum-ul se calculează cu `MessageDigest.getInstance("SHA-256")` din JDK și dovedește că fișierul descărcat este identic cu cel încărcat, indiferent de nodul care l-a servit.
 - Fiecare nod poate raporta ce fișiere deține (ID, nume, dimensiune, checksum). Dacă coordonatorul cade, noul coordonator reconstruiește tabela de metadate din aceste rapoarte (Etapa 6).
 - Starea unui nod și regula de alegere a nodurilor pentru o copie nouă sunt prevăzute de acum, ca etapele 3 și 4 să nu ceară rescrierea codului.
+
+## 4. Cerințe nefuncționale și obiective măsurabile
+
+Valorile sunt țintele echipei și se măsoară în etapa indicată.
+
+| Cerință | Obiectiv măsurabil | Cum se măsoară | Etapa |
+|---|---|---|---|
+| Integritate | 0 fișiere cu checksum diferit din 100 de descărcări | script care încarcă și descarcă 100 de fișiere și compară SHA-256 | 2 |
+| Descoperire | un nod nou apare în lista celorlalte în cel mult 3 s | diferența dintre momentele din loguri | 2 |
+| Detectarea defectelor | un nod oprit cu `kill -9` este marcat CAZUT în cel mult 5 s | loguri cu timestamp pe fiecare nod | 3 |
+| Scalabilitate | debitul de încărcare cu 3 noduri este mai mare decât cu 1 nod | 10 fișiere de 100 MB, timp total | 4 |
+| Coordonare | noul coordonator este ales în cel mult 10 s după căderea celui vechi | loguri Bully | 5 |
+| Replicare | fiecare fișier are exact 2 copii pe noduri distincte | comanda `ls` și directoarele `data/` | 6 |
+| Disponibilitate | după oprirea oricărui nod, 100% din fișiere rămân descărcabile | descărcarea tuturor fișierelor după oprire | 7 |
+
+### Justificarea țintelor
+
+- **3 s la descoperire și 5 s la detectarea defectelor**: heartbeat la 1 s, nodul devine SUSPECT după 2 semnale lipsă și CAZUT după 5 s, valori realiste într-o rețea locală.
+- **10 s la alegerea coordonatorului**: timpul de detectare a căderii (5 s) plus rundele algoritmului Bully.
+- **100 MB per fișier**: suficient pentru testul de scalabilitate, fără a depăși memoria laptopurilor.
+
+## 5. Ipoteze de lucru
+
+Obiectivele de mai sus sunt valabile în interiorul acestor ipoteze:
+
+- rețea locală (toate nodurile pe aceeași
