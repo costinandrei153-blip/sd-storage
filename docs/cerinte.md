@@ -79,3 +79,19 @@ Obiectivele de mai sus sunt valabile în interiorul acestor ipoteze:
 - defecte de tip crash (nodul se oprește), nu bizantine (nodul nu trimite date greșite intenționat);
 - ceasurile nodurilor sunt suficient de apropiate pentru compararea logurilor;
 - discul fiecărui nod are spațiu suficient pentru fișierele stocate.
+
+## 6. Scenariul demonstrației
+
+Este testul de acceptanță al întregului proiect. Fiecare pas spune ce face operatorul, comanda exactă și ce trebuie să vadă publicul. Fiecare comandă se rulează într-un terminal separat, din rădăcina proiectului, după `mvn -q package`.
+
+| Pas | Acțiunea operatorului | Comanda exactă | Ce trebuie să se vadă | Din etapa |
+|---|---|---|---|---|
+| 1 | pornește nodurile n1, n2, n3 în terminale separate | `java -cp target/classes ro.ubm.sd.node.StorageNode --id n1 --port 7001 --dir data/n1 --coordinator` <br> `java -cp target/classes ro.ubm.sd.node.StorageNode --id n2 --port 7002 --dir data/n2` <br> `java -cp target/classes ro.ubm.sd.node.StorageNode --id n3 --port 7003 --dir data/n3` | fiecare nod îi descoperă pe ceilalți; n1 este coordonator | 2 |
+| 2 | încarcă un fișier din client | `java -cp target/classes ro.ubm.sd.client.Client --coordinator localhost:7001`, apoi `put raport.pdf` | ID-ul fișierului și două noduri distincte care îl dețin | 2 |
+| 3 | descarcă fișierul | `get raport.pdf ./out/` | fișierul descărcat, cu checksum identic | 2 |
+| 4 | pornește nodul n4, fără a opri ceva | `java -cp target/classes ro.ubm.sd.node.StorageNode --id n4 --port 7004 --dir data/n4` | n4 apare în `nodes`; următoarele încărcări îl pot folosi | 4 |
+| 5 | oprește brutal un nod care deține `raport.pdf` | Windows: `taskkill /F /PID <pid>`; Linux: `kill -9 <pid>`; apoi `nodes` și `get raport.pdf ./out/` | nodul este marcat CAZUT; `get` reușește din cealaltă copie | 3 |
+| 6 | oprește brutal coordonatorul (n1) | `taskkill /F /PID <pid-n1>` (sau `kill -9 <pid-n1>`) | nodurile rămase aleg un nou coordonator | 5 |
+| 7 | verifică sistemul după realegere | `ls`, apoi `get raport.pdf ./out/` | metadatele sunt reconstruite; fișierul rămâne accesibil | 6 |
+
+Notă: PID-ul unui proces se găsește cu `jps` (include JDK-ul) sau din Task Manager.
