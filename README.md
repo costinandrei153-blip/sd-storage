@@ -1,147 +1,130 @@
+
 # Distributed File Storage System
 
-Sistem distribuit pentru stocarea și gestionarea fișierelor pe mai multe noduri, dezvoltat în Java 17 folosind Maven.
+Proiect realizat pentru disciplina Sisteme Distribuite.
 
-## 1. Membrii echipei
+## 1. Descriere
 
-- Membru: [Costin Andrei]
+Aplicație distribuită pentru stocarea și transferul fișierelor între mai multe noduri independente.
 
+Sistemul utilizează:
+- Java 17
+- TCP pentru transferul fișierelor
+- UDP Multicast pentru descoperirea nodurilor
+- SHA-256 pentru verificarea integrității
+- Maven pentru construirea proiectului
 
-## 2. Tehnologii utilizate
+## 2. Arhitectură
 
-- Java 17+
-- Apache Maven
-- TCP/IP
-- UDP Multicast
-- Git și GitHub
+Sistemul conține:
+- Storage Node – server TCP care gestionează fișierele;
+- Client – permite selectarea nodurilor și executarea operațiilor;
+- Node Discovery – descoperă automat nodurile prin UDP Multicast;
+- Protocol – gestionează transferul și verificarea fișierelor.
 
 ## 3. Structura proiectului
 
 ```text
 sd-storage/
-├── pom.xml
-├── README.md
-├── .gitignore
-├── docs/
-│   └── cerinte.md
-├── scripts/
-│   └── start-local.ps1
 ├── data/
 │   ├── n1/
 │   ├── n2/
 │   └── n3/
-└── src/
-    └── main/
-        └── java/
-            └── ro/
-                └── ubm/
-                    └── sd/
-                        ├── client/
-                        │   └── Client.java
-                        ├── node/
-                        │   └── StorageNode.java
-                        └── common/
+├── docs/
+│   ├── cerinte.md
+│   └── protocol.md
+├── scripts/
+├── src/main/java/ro/ubm/sd/
+│   ├── client/
+│   │   └── Client.java
+│   ├── common/
+│   │   ├── BullyElection.java
+│   │   ├── HeartbeatManager.java
+│   │   ├── NodeDiscovery.java
+│   │   └── Protocol.java
+│   └── node/
+│       └── StorageNode.java
+├── .gitignore
+├── pom.xml
+└── README.md
 ```
 
 ## 4. Cerințe pentru rulare
 
-- JDK 17 sau mai nou
+- Java JDK 17 sau mai nou
 - Apache Maven
-- Git
+- Rețea care permite comunicarea TCP și UDP Multicast
 
-Verificarea instalării:
+## 5. Construirea proiectului
 
-```bash
-java -version
-mvn -version
-git --version
-```
-
-## 5. Compilarea proiectului
-
-Din directorul principal al proiectului:
+Din directorul principal:
 
 ```bash
-mvn -q package
+mvn clean package
 ```
 
-## 6. Pornirea aplicației
+## 6. Pornirea nodurilor
 
-Fiecare componentă rulează într-un proces Java separat.
+Deschide trei terminale separate.
 
-### Terminalul 1 – Nodul n1 (coordonator temporar)
+Nodul 1:
 
 ```bash
-java -cp target/classes ro.ubm.sd.node.StorageNode --id n1 --port 7001 --dir data/n1 --coordinator
+java -cp target/classes ro.ubm.sd.node.StorageNode --id n1 --port 7001 --dir data/n1 --group 239.255.0.1
 ```
 
-### Terminalul 2 – Nodul n2
+Nodul 2:
 
 ```bash
-java -cp target/classes ro.ubm.sd.node.StorageNode --id n2 --port 7002 --dir data/n2
+java -cp target/classes ro.ubm.sd.node.StorageNode --id n2 --port 7002 --dir data/n2 --group 239.255.0.1
 ```
 
-### Terminalul 3 – Nodul n3
+Nodul 3:
 
 ```bash
-java -cp target/classes ro.ubm.sd.node.StorageNode --id n3 --port 7003 --dir data/n3
+java -cp target/classes ro.ubm.sd.node.StorageNode --id n3 --port 7003 --dir data/n3 --group 239.255.0.1
 ```
 
-### Terminalul 4 – Clientul
+## 7. Pornirea clientului
+
+Într-un terminal separat:
 
 ```bash
-java -cp target/classes ro.ubm.sd.client.Client --coordinator localhost:7001
+java -cp target/classes ro.ubm.sd.client.Client --group 239.255.0.1
 ```
 
-## 7. Configurarea proceselor
+## 8. Comenzi disponibile
 
-Fiecare proces primește configurația prin argumente din linia de comandă.
-
-### StorageNode
-
-| Argument | Descriere |
+| Comandă | Descriere |
 |---|---|
-| `--id` | Identificatorul unic al nodului |
-| `--port` | Portul TCP |
-| `--dir` | Directorul local pentru stocare |
-| `--coordinator` | Marchează nodul drept coordonator temporar |
+| nodes | Afișează nodurile descoperite |
+| put | Încarcă un fișier pe un nod |
+| get | Descarcă un fișier |
+| ping | Verifică disponibilitatea nodului |
+| info | Afișează informații despre nod |
+| list | Listează fișierele |
+| rm | Șterge un fișier |
+| help | Afișează comenzile |
+| exit | Închide clientul |
 
-### Client
+## 9. Testare
 
-| Argument | Descriere |
-|---|---|
-| `--coordinator` | Adresa și portul coordonatorului |
+Au fost testate:
+- descoperirea a trei noduri prin UDP Multicast;
+- comunicarea TCP;
+- încărcarea și descărcarea fișierelor;
+- transferul fișierelor goale;
+- transferul fișierelor de 5 MB și 1 GB;
+- verificarea integrității prin SHA-256;
+- listarea și ștergerea fișierelor;
+- întreruperea transferului.
 
-Niciun port, director sau coordonator nu trebuie stabilit permanent în codul sursă.
+## 10. Documentație
 
-## 8. Comportamentul la pornire
+Detaliile protocolului de comunicare sunt prezentate în:
 
-La pornire, fiecare proces trebuie să:
+`docs/protocol.md`
 
-1. Citească argumentele primite din linia de comandă.
-2. Creeze directorul local dacă acesta nu există.
-3. Inițializeze configurația.
-4. Afișeze configurația primită.
-
-Exemple de mesaje:
-
-```text
-[n1] pornit: port 7001, director data/n1, rol: coordonator
-
-[n2] pornit: port 7002, director data/n2, rol: nod de stocare
-
-[n3] pornit: port 7003, director data/n3, rol: nod de stocare
-
-[client] coordonator configurat: localhost:7001
-```
-
-## 9. Documentație
-
-Cerințele funcționale, modelul de date, obiectivele măsurabile, scenariul demonstrației și schița protocolului sunt documentate în:
+Cerințele proiectului sunt prezentate în:
 
 `docs/cerinte.md`
-
-## 10. Etapele proiectului
-
-Proiectul este dezvoltat progresiv, conform etapelor laboratorului de Sisteme Distribuite.
-
