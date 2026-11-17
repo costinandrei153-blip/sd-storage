@@ -2,8 +2,7 @@
 
 Sistem de stocare distribuită de fișiere cu replicare pe două noduri.
 
-## Echipa
-- Costin Andrei
+
 
 ## Cerințe
 - JDK 17+
