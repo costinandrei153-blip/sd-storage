@@ -6,3 +6,7 @@ target/
 .vscode/
 *.iml
 .DS_Store
+target/
+data/
+project-review.txt
+*.class

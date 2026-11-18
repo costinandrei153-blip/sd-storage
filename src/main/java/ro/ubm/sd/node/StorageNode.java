@@ -1,6 +1,8 @@
 
 package ro.ubm.sd.node;
 
+import ro.ubm.sd.common.BullyElection;
+import ro.ubm.sd.common.HeartbeatManager;
 import ro.ubm.sd.common.NodeDiscovery;
 import ro.ubm.sd.common.Protocol;
 
@@ -16,6 +18,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class StorageNode {
 
@@ -26,9 +30,14 @@ public class StorageNode {
 
     private ServerSocket serverSocket;
     private NodeDiscovery discovery;
+    private HeartbeatManager heartbeatManager;
+    private BullyElection bullyElection;
 
     private final ExecutorService clientPool =
             Executors.newCachedThreadPool();
+
+    private final ScheduledExecutorService electionMonitor =
+            Executors.newSingleThreadScheduledExecutor();
 
     private volatile boolean running = true;
 
@@ -40,9 +49,11 @@ public class StorageNode {
     ) {
         this.nodeId = nodeId;
         this.port = port;
+
         this.storageDirectory = Path.of(directory)
                 .toAbsolutePath()
                 .normalize();
+
         this.multicastGroup = multicastGroup;
     }
 
@@ -61,13 +72,43 @@ public class StorageNode {
 
             discovery.start();
 
+            heartbeatManager = new HeartbeatManager(
+                    nodeId,
+                    port,
+                    discovery
+            );
+
+            heartbeatManager.start();
+
+            bullyElection = new BullyElection(
+                    nodeId,
+                    discovery
+            );
+
+            // Prima alegere după ce nodurile au timp să se descopere.
+            electionMonitor.schedule(
+                    bullyElection::startElection,
+                    5,
+                    TimeUnit.SECONDS
+            );
+
+            // Verifică periodic dacă actualul coordonator a căzut.
+            electionMonitor.scheduleAtFixedRate(
+                    this::checkCoordinator,
+                    2,
+                    2,
+                    TimeUnit.SECONDS
+            );
+
             System.out.println("--------------------------------");
             System.out.println(" DISTRIBUTED STORAGE NODE");
             System.out.println("--------------------------------");
             System.out.println("Node ID: " + nodeId);
             System.out.println("TCP Port: " + port);
             System.out.println("Directory: " + storageDirectory);
-            System.out.println("Multicast: " + multicastGroup + ":4446");
+            System.out.println(
+                    "Multicast: " + multicastGroup + ":4446"
+            );
             System.out.println("--------------------------------");
             System.out.println("[" + nodeId + "] ready.");
 
@@ -75,6 +116,7 @@ public class StorageNode {
                 try {
                     Socket client = serverSocket.accept();
                     clientPool.submit(() -> handleClient(client));
+
                 } catch (IOException e) {
                     if (running) {
                         System.err.println(
@@ -93,6 +135,37 @@ public class StorageNode {
         }
     }
 
+    private void checkCoordinator() {
+        if (!running || bullyElection == null
+                || heartbeatManager == null) {
+            return;
+        }
+
+        String coordinatorId = bullyElection.getCoordinatorId();
+
+        if (coordinatorId == null
+                || coordinatorId.equals(nodeId)
+                || bullyElection.isElectionRunning()) {
+            return;
+        }
+
+        HeartbeatManager.NodeStatusInfo status =
+                heartbeatManager.getNodeStatuses().get(coordinatorId);
+
+        if (status != null
+                && "CAZUT".equals(
+                        String.valueOf(status.getStatus())
+                )) {
+
+            System.out.println(
+                    "[ELECTION] Coordinator " + coordinatorId
+                            + " is down. Starting election."
+            );
+
+            bullyElection.startElection();
+        }
+    }
+
     private void handleClient(Socket socket) {
         try (
                 Socket client = socket;
@@ -104,26 +177,58 @@ public class StorageNode {
                 )
         ) {
             String header = Protocol.readHeader(in);
-            String[] parts = header.trim().split("\\s+");
 
-            if (parts.length == 0) {
+            if (header == null || header.isBlank()) {
                 Protocol.writeHeader(out, "ERROR empty request");
                 return;
             }
 
+            // Mesajul COORDINATOR conține separatorul |.
+            if (header.startsWith("COORDINATOR|")) {
+                String newCoordinatorId = header.substring(
+                        "COORDINATOR|".length()
+                ).trim();
+
+                bullyElection.setCoordinator(newCoordinatorId);
+                Protocol.writeHeader(out, "OK");
+                return;
+            }
+
+            String[] parts = header.trim().split("\\s+");
+
             switch (parts[0].toUpperCase()) {
                 case "PUT" -> handlePut(parts, in, out);
+
                 case "GET" -> handleGet(parts, out);
+
                 case "PING" ->
                         Protocol.writeHeader(out, "PONG " + nodeId);
+
                 case "INFO" ->
                         Protocol.writeHeader(
                                 out,
-                                "NODE " + nodeId + " PORT " + port
+                                "NODE=" + nodeId
+                                        + "|PORT=" + port
+                                        + "|COORDINATOR="
+                                        + String.valueOf(
+                                                bullyElection.getCoordinatorId()
+                                        )
                         );
+
                 case "LIST" ->
                         Protocol.writeHeader(out, listFiles());
+
+                case "NODES" ->
+                        Protocol.writeHeader(out, listNodes());
+
                 case "RM" -> handleRemove(parts, out);
+
+                case "ELECTION" ->
+                        Protocol.writeHeader(
+                                out,
+                                bullyElection.handleElectionRequest()
+                        );
+
                 default ->
                         Protocol.writeHeader(
                                 out,
@@ -197,12 +302,7 @@ public class StorageNode {
                 return;
             }
 
-            Files.move(
-                    temporary,
-                    destination,
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-            );
+            moveFile(temporary, destination);
 
             System.out.println(
                     "[STORAGE] Saved " + filename
@@ -254,7 +354,9 @@ public class StorageNode {
 
         Protocol.sendBytes(file, out);
 
-        System.out.println("[STORAGE] Sent " + file.getFileName());
+        System.out.println(
+                "[STORAGE] Sent " + file.getFileName()
+        );
     }
 
     private void handleRemove(
@@ -282,7 +384,11 @@ public class StorageNode {
         }
 
         Files.delete(file);
-        Protocol.writeHeader(out, "REMOVED " + parts[1]);
+
+        Protocol.writeHeader(
+                out,
+                "REMOVED " + parts[1]
+        );
     }
 
     private String listFiles() throws IOException {
@@ -295,6 +401,29 @@ public class StorageNode {
                     .reduce((a, b) -> a + "," + b)
                     .orElse("");
         }
+    }
+
+    private String listNodes() {
+        StringBuilder result = new StringBuilder("NODES");
+
+        Map<String, HeartbeatManager.NodeStatusInfo> statuses =
+                heartbeatManager.getNodeStatuses();
+
+        statuses.values().stream()
+                .sorted((a, b) -> a.getId().compareTo(b.getId()))
+                .forEach(node -> result.append(" | ")
+                        .append(node.getId())
+                        .append("@")
+                        .append(node.getAddress())
+                        .append(":")
+                        .append(node.getPort())
+                        .append(" ")
+                        .append(node.getStatus())
+                        .append(" lastHeartbeat=")
+                        .append(node.getLastHeartbeat())
+                );
+
+        return result.toString();
     }
 
     private Path resolveFile(String filename) {
@@ -316,8 +445,41 @@ public class StorageNode {
         return file;
     }
 
+    private void moveFile(Path source, Path destination)
+            throws IOException {
+
+        try {
+            Files.move(
+                    source,
+                    destination,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+            );
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(
+                    source,
+                    destination,
+                    StandardCopyOption.REPLACE_EXISTING
+            );
+        }
+    }
+
     private void shutdown() {
         running = false;
+
+        electionMonitor.shutdownNow();
+
+        if (bullyElection != null) {
+            bullyElection.close();
+        }
+
+        if (heartbeatManager != null) {
+            heartbeatManager.close();
+        }
+
+        if (discovery != null) {
+            discovery.close();
+        }
 
         try {
             if (serverSocket != null && !serverSocket.isClosed()) {
@@ -326,13 +488,11 @@ public class StorageNode {
         } catch (IOException ignored) {
         }
 
-        if (discovery != null) {
-            discovery.close();
-        }
-
         clientPool.shutdownNow();
 
-        System.out.println("[SERVER] Node " + nodeId + " stopped.");
+        System.out.println(
+                "[SERVER] Node " + nodeId + " stopped."
+        );
     }
 
     private static Map<String, String> parseArguments(String[] args) {
@@ -364,12 +524,15 @@ public class StorageNode {
             Map<String, String> config = parseArguments(args);
 
             String id = config.getOrDefault("--id", "n1");
+
             int port = Integer.parseInt(
                     config.getOrDefault("--port", "7001")
             );
+
             String directory = config.getOrDefault(
                     "--dir", "data/n1"
             );
+
             String group = config.getOrDefault(
                     "--group", "239.255.0.1"
             );
@@ -391,10 +554,12 @@ public class StorageNode {
             System.err.println(
                     "[StorageNode] " + e.getMessage()
             );
+
             System.err.println(
                     "Usage: --id n1 --port 7001 --dir data/n1 "
                             + "--group 239.255.0.1"
             );
+
             System.exit(1);
         }
     }
