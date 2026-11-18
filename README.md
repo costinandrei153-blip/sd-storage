@@ -128,3 +128,36 @@ Detaliile protocolului de comunicare sunt prezentate în:
 Cerințele proiectului sunt prezentate în:
 
 `docs/cerinte.md`
+
+
+## 11. Etapa 6 – RMI, replicare și recuperarea metadatelor
+
+Fiecare nod pornește un registru Java RMI pe portul `TCP + 10000`
+și exportă serviciul de metadate pe portul `TCP + 10001`.
+
+Exemple:
+- n1: TCP 7001, RMI Registry 17001, RMI Object 27001
+- n2: TCP 7002, RMI Registry 17002, RMI Object 27002
+- n3: TCP 7003, RMI Registry 17003, RMI Object 27003
+
+Clientul `put <filepath>`:
+1. descoperă nodurile active;
+2. alege două noduri distincte;
+3. trimite fișierul și metadatele locale ambelor noduri;
+4. confirmă în RMI metadata service după ce ambele copii au fost salvate.
+
+Fiecare nod păstrează un fișier `.meta` pentru fiecare fișier stocat.
+După alegerea unui coordonator nou, acesta interoghează cataloagele
+nodurilor descoperite și reconstruiește metadatele.
+
+Comenzi Stage 6:
+```text
+put C:\cale\raport.pdf
+ls
+get raport.pdf C:\download\raport.pdf
+rm raport.pdf
+nodes
+```
+
+Pentru RMI, permiteți în firewall porturile TCP ale fiecărui nod,
+plus porturile RMI Registry și RMI Object prezentate mai sus.
